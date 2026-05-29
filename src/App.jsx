@@ -217,9 +217,10 @@ export default function App() {
       const fileDownload = document.createElement('a');
       document.body.appendChild(fileDownload);
       fileDownload.href = url;
-      const gradeFileName =
-        formData.grades && formData.grades.length > 0 ? formData.grades.join('_') : 'O';
-      fileDownload.download = `[가정통신문] ${gradeFileName}학년_${formData.eventName || '체험학습'}.hwpx`;
+      const gradeText =
+        formData.grades && formData.grades.length > 0 ? formData.grades.join(', ') : 'O';
+      const eventName = formData.eventName.trim() || '체험학습';
+      fileDownload.download = `2026학년도 ${gradeText}학년 ${eventName} 체험학습 가정통신문.hwpx`;
       fileDownload.click();
 
       document.body.removeChild(fileDownload);
