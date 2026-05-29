@@ -176,7 +176,8 @@ export default function App() {
       // 붙임 줄의 문서명과 동일하게: '2026학년도 X학년 OOO 체험학습 가정통신문'
       const gradeText =
         formData.grades && formData.grades.length > 0 ? formData.grades.join(', ') : 'O';
-      fileDownload.download = `2026학년도 ${gradeText}학년 ${formData.eventName || '체험학습'} 체험학습 가정통신문.hwpx`;
+      const eventName = formData.eventName.trim() || '체험학습';
+      fileDownload.download = `2026학년도 ${gradeText}학년 ${eventName} 체험학습 가정통신문.hwpx`;
       fileDownload.click();
 
       document.body.removeChild(fileDownload);
