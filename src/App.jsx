@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardCopy, Download, FileText, CheckCircle } from 'lucide-react';
+import { ClipboardCopy, Download, FileText, CheckCircle, Mail } from 'lucide-react';
 import { buildHwpxBlob } from './hwpx';
+import { buildGtongsinBlob } from './gtongsin';
 
 // 'YYYY-MM-DD' 문자열을 로컬 시간 기준 Date로 변환 (timezone에 따른 하루 밀림 방지)
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
+};
+
+// 'YYYY-MM-DD' → '2026. 5. 7.(목)' 형태로 변환
+const formatDate = (dateStr) => {
+  const d = parseLocalDate(dateStr);
+  if (!d) return '';
+  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.(${days[d.getDay()]})`;
 };
 
 export default function App() {
@@ -43,13 +52,6 @@ export default function App() {
       const countDisplay = countText.includes('명') ? countText : `${countText}명`;
       participantText = `${gradeText}학년 ${countDisplay}`;
     }
-
-    const formatDate = (dateStr) => {
-      const d = parseLocalDate(dateStr);
-      if (!d) return '';
-      const days = ['일', '월', '화', '수', '목', '금', '토'];
-      return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.(${days[d.getDay()]})`;
-    };
 
     const formatSafetyDate = (dateStr) => {
       const d = parseLocalDate(dateStr);
@@ -182,6 +184,48 @@ export default function App() {
       showToast('💾 한글(HWPX) 문서 다운로드가 시작되었습니다.');
     } catch (err) {
       showToast('❌ 문서 생성에 실패했습니다.');
+    }
+  };
+
+  // 가정통신문 다운로드 (행사명·학년·일시·장소를 자동으로 채운 한글 .hwpx)
+  const handleGtongsin = async () => {
+    // 가정통신문은 입력값이 비어도 자리표시자(○)로 채워 만들 수 있으나,
+    // 자동으로 채울 핵심 값(행사명/학년/일시/장소)이 전부 비면 안내한다.
+    if (
+      !formData.eventName.trim() &&
+      formData.grades.length === 0 &&
+      !formData.date &&
+      !formData.location.trim()
+    ) {
+      showToast('⚠️ 행사명·학년·일시·장소 중 하나 이상을 먼저 입력해주세요.');
+      return;
+    }
+
+    try {
+      const blob = await buildGtongsinBlob({
+        eventName: formData.eventName.trim(),
+        grades: formData.grades,
+        dateTimeStr: formData.date
+          ? `${formatDate(formData.date)} ${formData.startTime}~${formData.endTime}`
+          : '',
+        location: formData.location.trim(),
+      });
+      const url = URL.createObjectURL(blob);
+
+      const fileDownload = document.createElement('a');
+      document.body.appendChild(fileDownload);
+      fileDownload.href = url;
+      const gradeFileName =
+        formData.grades && formData.grades.length > 0 ? formData.grades.join('_') : 'O';
+      fileDownload.download = `[가정통신문] ${gradeFileName}학년_${formData.eventName || '체험학습'}.hwpx`;
+      fileDownload.click();
+
+      document.body.removeChild(fileDownload);
+      URL.revokeObjectURL(url);
+
+      showToast('💌 가정통신문(HWPX) 다운로드가 시작되었습니다. 비어 있는 부분은 한글에서 채워주세요.');
+    } catch (err) {
+      showToast('❌ 가정통신문 생성에 실패했습니다.');
     }
   };
 
@@ -347,9 +391,17 @@ export default function App() {
                 className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-xl font-bold text-lg shadow-md transition-all active:scale-95"
               >
                 <Download size={24} />
-                한글파일 다운로드
+                기안문 한글파일
               </button>
             </div>
+
+            <button
+              onClick={handleGtongsin}
+              className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white p-4 rounded-xl font-bold text-lg shadow-md transition-all active:scale-95"
+            >
+              <Mail size={24} />
+              가정통신문 한글파일 (입력값 자동 채움)
+            </button>
           </div>
         </div>
       </div>
