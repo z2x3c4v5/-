@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import JSZip from 'jszip';
 import { ClipboardCopy, Download, FileText, CheckCircle } from 'lucide-react';
 
 // 'YYYY-MM-DD' 문자열을 로컬 시간 기준 Date로 변환 (timezone에 따른 하루 밀림 방지)
@@ -6,6 +7,98 @@ const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
+};
+
+// XML 특수문자 escape
+const escapeXml = (s) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// 원본 공문 본문 서식(굴림체 12pt, 양쪽정렬, 공문 표준 내어쓰기)을 적용한
+// .odt(OpenDocument Text) 패키지를 생성한다. 본문만 담으므로 한글/에듀파인에
+// 붙여넣으면 동일한 글꼴·들여쓰기로 표시된다.
+const FONT = '굴림체';
+
+// 미리보기 텍스트를 줄 단위로 분석해 항목 수준(level)에 맞는 단락 스타일을 부여
+const buildOdtParagraphs = (text) =>
+  text
+    .split('\n')
+    .map((raw) => {
+      const line = raw.trim();
+      if (line === '') return '<text:p text:style-name="Body"/>';
+      // 가.~하. 등 한글 항목 → 한 단계 들여쓰기(Lv2)
+      if (/^[가-힣]\./.test(line)) {
+        return `<text:p text:style-name="Lv2">${escapeXml(line)}</text:p>`;
+      }
+      // 1. 2. / 붙임 / 끝. → 최상위 항목(Lv1)
+      if (/^\d+\./.test(line) || /^붙임/.test(line) || /^끝\./.test(line)) {
+        return `<text:p text:style-name="Lv1">${escapeXml(line)}</text:p>`;
+      }
+      return `<text:p text:style-name="Body">${escapeXml(line)}</text:p>`;
+    })
+    .join('');
+
+const buildContentXml = (text) => {
+  const ns =
+    'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" ' +
+    'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" ' +
+    'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" ' +
+    'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"';
+  const textProps =
+    `<style:text-properties style:font-name="${FONT}" style:font-name-asian="${FONT}" ` +
+    'fo:font-size="12pt" style:font-size-asian="12pt" fo:color="#000000"/>';
+  // 공문 표준 내어쓰기: 항목 번호는 내어쓰고 본문은 들여써서 둘째 줄이 정렬됨
+  const para = (left, indent) =>
+    `<style:paragraph-properties fo:line-height="160%" fo:text-align="justify" ` +
+    `fo:margin-left="${left}" fo:text-indent="${indent}" fo:margin-top="0cm" fo:margin-bottom="0cm"/>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content ${ns} office:version="1.2">
+<office:font-face-decls>
+<style:font-face style:name="${FONT}" svg:font-family="${FONT}" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"/>
+</office:font-face-decls>
+<office:automatic-styles>
+<style:style style:name="Body" style:family="paragraph">${para('0cm', '0cm')}${textProps}</style:style>
+<style:style style:name="Lv1" style:family="paragraph">${para('0.7cm', '-0.7cm')}${textProps}</style:style>
+<style:style style:name="Lv2" style:family="paragraph">${para('1.4cm', '-0.7cm')}${textProps}</style:style>
+</office:automatic-styles>
+<office:body><office:text>${buildOdtParagraphs(text)}</office:text></office:body>
+</office:document-content>`;
+};
+
+const STYLES_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2">
+<office:styles>
+<style:default-style style:family="paragraph"><style:text-properties style:font-name="${FONT}" style:font-name-asian="${FONT}" fo:font-size="12pt" style:font-size-asian="12pt"/></style:default-style>
+</office:styles>
+<office:automatic-styles>
+<style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+</office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"/></office:master-styles>
+</office:document-styles>`;
+
+const META_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2"><office:meta/></office:document-meta>`;
+
+const MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>
+<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+<manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>`;
+
+// 본문 텍스트를 받아 완전한 .odt(zip) Blob을 생성
+const buildOdtBlob = async (text) => {
+  const zip = new JSZip();
+  // mimetype은 압축하지 않고 가장 먼저 저장해야 한다 (ODF 규격)
+  zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' });
+  zip.file('META-INF/manifest.xml', MANIFEST_XML);
+  zip.file('content.xml', buildContentXml(text));
+  zip.file('styles.xml', STYLES_XML);
+  zip.file('meta.xml', META_XML);
+  return zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.oasis.opendocument.text',
+  });
 };
 
 export default function App() {
@@ -155,47 +248,33 @@ export default function App() {
     }
   };
 
-  // 파일 다운로드 기능 (Flat ODT, .fodt 형식)
-  const handleDownload = () => {
+  // 파일 다운로드 기능 (서식이 적용된 .odt 문서)
+  const handleDownload = async () => {
     const missing = getMissingFields();
     if (missing.length > 0) {
       showToast(`⚠️ 입력이 비었습니다: ${missing.join(', ')}`);
       return;
     }
 
-    // 텍스트를 XML 단락(paragraph) 태그로 변환합니다.
-    const textLines = previewText.split('\n');
-    const paragraphs = textLines.map(line => {
-      const escapedLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      if (escapedLine.trim() === '') return `<text:p></text:p>`;
-      return `<text:p>${escapedLine}</text:p>`;
-    }).join('\n');
+    try {
+      const blob = await buildOdtBlob(previewText);
+      const url = URL.createObjectURL(blob);
 
-    // 개방형 문서(ODT)의 Flat XML 구조
-    const fodtContent = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.text">
-  <office:body>
-    <office:text>
-      ${paragraphs}
-    </office:text>
-  </office:body>
-</office:document>`;
+      const fileDownload = document.createElement('a');
+      document.body.appendChild(fileDownload);
+      fileDownload.href = url;
+      const gradeFileName =
+        formData.grades && formData.grades.length > 0 ? formData.grades.join('_') : 'O';
+      fileDownload.download = `[기안문] ${gradeFileName}학년_${formData.eventName || '체험학습'}.odt`;
+      fileDownload.click();
 
-    const blob = new Blob([fodtContent], { type: 'application/vnd.oasis.opendocument.text-flat-xml' });
-    const url = URL.createObjectURL(blob);
+      document.body.removeChild(fileDownload);
+      URL.revokeObjectURL(url);
 
-    const fileDownload = document.createElement('a');
-    document.body.appendChild(fileDownload);
-    fileDownload.href = url;
-    // Flat XML이므로 .fodt 확장자로 다운로드
-    const gradeFileName = formData.grades && formData.grades.length > 0 ? formData.grades.join('_') : 'O';
-    fileDownload.download = `[기안문] ${gradeFileName}학년_${formData.eventName || '체험학습'}.fodt`;
-    fileDownload.click();
-
-    document.body.removeChild(fileDownload);
-    URL.revokeObjectURL(url);
-
-    showToast('💾 FODT 문서 다운로드가 시작되었습니다. (LibreOffice/한글에서 열기)');
+      showToast('💾 ODT 문서 다운로드가 시작되었습니다. (한글/LibreOffice에서 열기)');
+    } catch (err) {
+      showToast('❌ 문서 생성에 실패했습니다.');
+    }
   };
 
   return (
