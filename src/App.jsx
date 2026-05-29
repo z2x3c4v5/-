@@ -212,7 +212,7 @@ export default function App() {
                 >
                   <option value="">-- 관련 항목을 선택해주세요 --</option>
                   <option value="2026학년도 덕천교육계획">2026학년도 덕천교육계획</option>
-                  <option value="학교 밖 체험활동">학교 밖 체험활동</option>
+                  <option value="2026학년도 덕천초 학교 밖 체험활동">2026학년도 덕천초 학교 밖 체험활동</option>
                   <option value="2026 북부희망교육지구 지원사업">2026 북부희망교육지구 지원사업</option>
                 </select>
               </div>
