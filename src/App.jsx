@@ -173,9 +173,10 @@ export default function App() {
       const fileDownload = document.createElement('a');
       document.body.appendChild(fileDownload);
       fileDownload.href = url;
-      const gradeFileName =
-        formData.grades && formData.grades.length > 0 ? formData.grades.join('_') : 'O';
-      fileDownload.download = `[기안문] ${gradeFileName}학년_${formData.eventName || '체험학습'}.hwpx`;
+      // 붙임 줄의 문서명과 동일하게: '2026학년도 X학년 OOO 체험학습 가정통신문'
+      const gradeText =
+        formData.grades && formData.grades.length > 0 ? formData.grades.join(', ') : 'O';
+      fileDownload.download = `2026학년도 ${gradeText}학년 ${formData.eventName || '체험학습'} 체험학습 가정통신문.hwpx`;
       fileDownload.click();
 
       document.body.removeChild(fileDownload);
