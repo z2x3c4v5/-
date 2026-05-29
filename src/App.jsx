@@ -28,6 +28,7 @@ export default function App() {
     startTime: '09:00',
     endTime: '12:00',
     location: '',
+    transport: '',
     safetyDate: ''
   });
 
@@ -67,13 +68,16 @@ export default function App() {
       ? formatSafetyDate(formData.safetyDate)
       : '[날짜 선택]';
 
+    const transportText = formData.transport || '[이동방법 선택]';
+
     const text = `1. 관련: ${refText}
 2. 2026학년도 ${eventText} 체험학습을(를) 다음과 같이 실시하고자 합니다.
   가. 일시: ${dateTimeStr}
   나. 장소: ${formData.location || '[장소 입력]'}
   다. 참여 학생: ${participantText}
-  라. ‘2026 덕천초 학교 밖 체험학습 안전 계획’에 따라 관련 사전 안전 지도를 ${safetyDateStr}에 실시할 예정임
-  마. 당일 세부일정: [붙임] 가정통신문 참고
+  라. 이동방법: ${transportText}
+  마. ‘2026 덕천초 학교 밖 체험학습 안전 계획’에 따라 관련 사전 안전 지도를 ${safetyDateStr}에 실시할 예정임
+  바. 당일 세부일정: [붙임] 가정통신문 참고
 
 붙임  2026학년도 ${gradeText}학년 ${eventText} 체험학습 가정통신문 1부.
 끝.`;
@@ -112,8 +116,17 @@ export default function App() {
     if (!formData.studentCount.trim()) missing.push('참여 학생 수');
     if (!formData.date) missing.push('일시');
     if (!formData.location.trim()) missing.push('장소');
+    if (!formData.transport) missing.push('이동방법');
     if (!formData.safetyDate) missing.push('사전 안전 지도 날짜');
     return missing;
+  };
+
+  // 사전 안전 지도 날짜가 체험학습 일시보다 늦으면(또는 같으면) true
+  const isSafetyDateInvalid = () => {
+    if (!formData.date || !formData.safetyDate) return false;
+    const trip = parseLocalDate(formData.date);
+    const safety = parseLocalDate(formData.safetyDate);
+    return safety >= trip;
   };
 
   // 구형 브라우저 폴백용 복사
@@ -141,6 +154,10 @@ export default function App() {
       showToast(`⚠️ 입력이 비었습니다: ${missing.join(', ')}`);
       return;
     }
+    if (isSafetyDateInvalid()) {
+      window.alert('사전 안전 지도 계획이 먼저 체험학습 일시보다 앞서야 합니다.');
+      return;
+    }
 
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -163,6 +180,10 @@ export default function App() {
     const missing = getMissingFields();
     if (missing.length > 0) {
       showToast(`⚠️ 입력이 비었습니다: ${missing.join(', ')}`);
+      return;
+    }
+    if (isSafetyDateInvalid()) {
+      window.alert('사전 안전 지도 계획이 먼저 체험학습 일시보다 앞서야 합니다.');
       return;
     }
 
@@ -202,6 +223,10 @@ export default function App() {
       showToast('⚠️ 행사명·학년·일시·장소 중 하나 이상을 먼저 입력해주세요.');
       return;
     }
+    if (isSafetyDateInvalid()) {
+      window.alert('사전 안전 지도 계획이 먼저 체험학습 일시보다 앞서야 합니다.');
+      return;
+    }
 
     try {
       const blob = await buildGtongsinBlob({
@@ -211,6 +236,7 @@ export default function App() {
           ? `${formatDate(formData.date)} ${formData.startTime}~${formData.endTime}`
           : '',
         location: formData.location.trim(),
+        transport: formData.transport,
       });
       const url = URL.createObjectURL(blob);
 
@@ -357,7 +383,27 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">7. 사전 안전 지도 날짜 (달력 선택)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">7. 이동방법</label>
+                <div className="flex flex-wrap gap-2">
+                  {['도보', '대중교통', '전세버스'].map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, transport: opt }))}
+                      className={`flex-1 min-w-[5rem] py-2.5 rounded-lg border font-bold transition-all ${
+                        formData.transport === opt
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-blue-300'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">8. 사전 안전 지도 날짜 (달력 선택)</label>
                 <input
                   type="date"
                   name="safetyDate"
@@ -365,6 +411,11 @@ export default function App() {
                   onChange={handleChange}
                   className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
                 />
+                {isSafetyDateInvalid() && (
+                  <p className="text-xs text-red-500 mt-1 font-bold">
+                    ⚠️ 사전 안전 지도 계획이 먼저 체험학습 일시보다 앞서야 합니다.
+                  </p>
+                )}
               </div>
             </div>
           </div>
